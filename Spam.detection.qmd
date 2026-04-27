@@ -1,0 +1,17 @@
+---
+title: "Spam_Detection_Classification"
+author: "J Chen"
+format: html
+editor: visual
+---
+
+## Project 4
+
+### Approach
+
+1.  Select source for spam classification training (sample from class <https://spamassassin.apache.org/old/publiccorpus/>)
+2.  Download the selected spam/ham libraries and upload into github
+3.  Setup libraries and load data
+4.  Build corpus and train
+5.  Run program
+6.  Evaluate results
