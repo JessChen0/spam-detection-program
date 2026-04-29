@@ -1,17 +1,225 @@
 ---
 title: "Spam_Detection_Classification"
-author: "J Chen"
-format: html
+author: "Jess Chen"
+format: gfm
 editor: visual
 ---
 
-## Project 4
+## Project 4 - Spam Detection Model
 
-### Approach
+In this project, we build a spam detection model using native Bayes model. The data used to train and test the model was sourced from an open sourced project called, Apache SpamAssassin (link in references). The process included uploading the raw data into github, uploading and cleaning the data in R, categorizing the data before training the model and ultimately, testing and refining the model.
 
-1.  Select source for spam classification training (sample from class <https://spamassassin.apache.org/old/publiccorpus/>)
-2.  Download the selected spam/ham libraries and upload into github
-3.  Setup libraries and load data
-4.  Build corpus and train
-5.  Run program
-6.  Evaluate results
+### 1. Setup & Upload
+
+We firstly setup libraries that will be used for this project including tidytext, caret and dplyer. Followed by uploading the documents into github.
+
+```{r}
+library(tm)        # Text mining
+library(caret)     # ML framework
+library(e1071)     # Naive Bayes
+library(tidytext)
+library(dplyr)
+library(httr)
+
+
+base_url <- "https://raw.githubusercontent.com/JessChen0/spam-detection-program/refs/heads/main/"
+
+# Function to read all emails from a GitHub folder
+read_emails_from_github <- function(folder_name) {
+  # Get the list of files using the GitHub API
+  api_url <- paste0("https://api.github.com/repos/JessChen0/spam-detection-program/contents/", folder_name)
+  
+  response <- GET(api_url)
+  files <- content(response)
+  
+  # Download and read each file
+  emails <- c()
+  for (file in files) {
+    raw_url <- file$download_url
+    text <- paste(readLines(url(raw_url), warn = FALSE), collapse = " ")
+    emails <- c(emails, text)
+  }
+  return(emails)
+}
+
+# Load ham and spam emails
+cat("Loading ham emails... (this may take a minute)\n")
+ham_emails  <- read_emails_from_github("easy_ham")
+
+cat("Loading spam emails... (this may take a minute)\n")
+spam_emails <- read_emails_from_github("spam")
+
+cat("Done! Ham:", length(ham_emails), "emails | Spam:", length(spam_emails), "emails\n")
+```
+
+Check emails are uploaded.
+
+```{r}
+# Check how many emails loaded
+cat("Ham emails:", length(ham_emails), "\n")
+cat("Spam emails:", length(spam_emails), "\n")
+
+# Preview the first ham email
+ham_emails[1]
+
+# Preview the first spam email
+spam_emails[1]
+
+
+```
+
+### 2. Data Cleanup and Label
+
+Next, we will combine the emails and label them
+
+```{r}
+
+# Label each email
+ham_labels  <- rep("ham", length(ham_emails))
+spam_labels <- rep("spam", length(spam_emails))
+
+# Combine into one data frame
+emails_df <- data.frame(
+  text  = c(ham_emails, spam_emails),
+  label = c(ham_labels, spam_labels),
+  stringsAsFactors = FALSE
+)
+
+# Convert label to a factor 
+emails_df$label <- as.factor(emails_df$label)
+
+# Function to remove dodgy characters before processing
+clean_text <- function(x) {
+  x <- iconv(x, from = "UTF-8", to = "ASCII", sub = "")  # remove non-ASCII characters
+  return(x)
+}
+
+# Create corpus
+corpus <- VCorpus(VectorSource(emails_df$text))
+
+# Clean the text - note clean_text is added at the top
+corpus <- tm_map(corpus, content_transformer(clean_text))  # remove special characters FIRST
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, stripWhitespace)
+
+# Preview
+cat("BEFORE cleaning:\n")
+print(emails_df$text[1])
+
+cat("\nAFTER cleaning:\n")
+print(corpus[[1]]$content)
+
+
+
+```
+
+### 3. Covert Emails and Count Frequency
+
+Count and capture word frequency profile for each email. This will help inform the classifier later on how to categorize the "new" emails coming in.
+
+```{r}
+# Create the Document-Term Matrix
+dtm <- DocumentTermMatrix(corpus)
+
+# Check its size
+cat("DTM dimensions:\n")
+dim(dtm)
+
+# Remove words that appear in less than 1% of emails
+dtm <- removeSparseTerms(dtm, 0.99)
+
+# Check the new size
+cat("DTM dimensions after trimming:\n")
+dim(dtm)
+
+
+
+```
+
+### 4. Train Model
+
+We will now split the dataset into training ds and testing ds. But first, we have to shuffle the data and will set a seed to do this.
+
+```{r}
+# Convert word counts to yes/no
+train_data_bool <- train_data
+test_data_bool  <- test_data
+
+train_data_bool[, -ncol(train_data)] <- train_data[, -ncol(train_data)] > 0
+test_data_bool[, -ncol(test_data)]   <- test_data[, -ncol(test_data)] > 0
+
+# Retrain the model
+cat("Retraining model...\n")
+model_bool <- naiveBayes(label ~ ., data = train_data_bool)
+cat("Done!\n")
+
+# Test it
+predictions_bool <- predict(model_bool, test_data_bool)
+confusionMatrix(predictions_bool, test_data_bool$label, positive = "spam")
+
+```
+
+Finally, we will train the Naive Bayes Classifier!
+
+```{r}
+# Train the Naive Bayes model
+cat("Training the model... (this may take a minute)\n")
+model <- naiveBayes(label ~ ., data = train_data)
+cat("Done!\n")
+
+
+```
+
+### 5. Test Model
+
+With the model built, we can now test to see how well it does!
+
+```{r}
+
+# Use the model to predict labels on the test set
+predictions <- predict(model, test_data)
+
+# Compare predictions to the real labels
+confusionMatrix(predictions, test_data$label, positive = "spam")
+
+```
+
+### 6. Refine Model
+
+The confusion matrix above highlighted the dangers of false positives. In this situation, it is detrimental to falsely identify a ham email as spam. Even though we correctly identified all spam, we also allowed a lot of real emails to potentially not be reviewed!
+
+In this case, we iterated the model to increase the confidence level to 90% for spams. This allowed us to correctly identify spam but also, the model is being more precise and leaning on the side of more emails be labelled ham, which as it turns out leads to more correct answers.
+
+```{r}
+# Convert to factor
+train_data_factor <- as.data.frame(lapply(train_data_bool[, -ncol(train_data_bool)], factor))
+test_data_factor  <- as.data.frame(lapply(test_data_bool[, -ncol(test_data_bool)], factor))
+train_data_factor$label <- train_data_bool$label
+test_data_factor$label  <- test_data_bool$label
+
+# Train model
+cat("Training model...\n")
+model_factor <- naiveBayes(label ~ ., data = train_data_factor)
+cat("Done!\n")
+
+# Test with strict threshold
+probabilities      <- predict(model_factor, test_data_factor, type = "raw")
+threshold          <- 0.90
+predictions_strict <- ifelse(probabilities[, "spam"] > threshold, "spam", "ham")
+predictions_strict <- factor(predictions_strict, levels = c("ham", "spam"))
+confusionMatrix(predictions_strict, test_data_factor$label, positive = "spam")
+
+```
+
+### 7. Conclusion
+
+In this assignment, we leveraged Claude LLM to help build out a classification model to identify spam emails. We used native Bayes to train the model on 1200 emails and tested on 300. Our initial model resulted in far too many false positives (e.g., where a ham is incorrectly labelled spam), this would be harmful in the case of a spam filter if the reader then ignores important emails. To rectify this, we retooled the model to use a stricter confidence level to filter out less spam, therefore allowing for more ham emails to be correctly labelled.
+
+### 0. References
+
+Raw model training data: <https://spamassassin.apache.org/old/publiccorpus/>
+
+Claude Sonnet 4.6 (2026) Anthropic LLM. Link to chat: <https://claude.ai/share/4308269d-a184-4199-9355-41b758434fc0>
