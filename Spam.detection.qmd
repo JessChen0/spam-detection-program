@@ -7,7 +7,7 @@ editor: visual
 
 ## Project 4 - Spam Detection Model
 
-In this project, we build a spam detection model using native Bayes model. The data used to train and test the model was sourced from an open sourced project called, Apache SpamAssassin (link in references). The process included uploading the raw data into github, uploading and cleaning the data in R, categorizing the data before training the model and ultimately, testing and refining the model.
+In this project, we built a spam detection model using Naive Bayes model. The data used to train and test the model was from an open sourced project called, Apache SpamAssassin (link in references). The process included uploading the raw data into github, uploading and cleaning the data in R, categorizing the data before training the model and ultimately, testing and refining the model.
 
 ### 1. Setup & Upload
 
@@ -144,21 +144,34 @@ dim(dtm)
 We will now split the dataset into training ds and testing ds. But first, we have to shuffle the data and will set a seed to do this.
 
 ```{r}
-# Convert word counts to yes/no
+# Convert DTM to a data frame
+emails_matrix       <- as.data.frame(as.matrix(dtm))
+emails_matrix$label <- emails_df$label
+
+# Shuffle
+set.seed(42)
+emails_matrix <- emails_matrix[sample(nrow(emails_matrix)), ]
+
+# Split into 80/20
+train_idx  <- createDataPartition(emails_matrix$label, p = 0.8, list = FALSE)
+train_data <- emails_matrix[train_idx, ]
+test_data  <- emails_matrix[-train_idx, ]
+
+cat("Training emails:", nrow(train_data), "\n")
+cat("Test emails:", nrow(test_data), "\n")
+table(train_data$label)
+table(test_data$label)
+
+# Convert to boolean
 train_data_bool <- train_data
 test_data_bool  <- test_data
-
 train_data_bool[, -ncol(train_data)] <- train_data[, -ncol(train_data)] > 0
 test_data_bool[, -ncol(test_data)]   <- test_data[, -ncol(test_data)] > 0
 
-# Retrain the model
-cat("Retraining model...\n")
-model_bool <- naiveBayes(label ~ ., data = train_data_bool)
+# Train initial model
+cat("Training the model...\n")
+model <- naiveBayes(label ~ ., data = train_data)
 cat("Done!\n")
-
-# Test it
-predictions_bool <- predict(model_bool, test_data_bool)
-confusionMatrix(predictions_bool, test_data_bool$label, positive = "spam")
 
 ```
 
@@ -216,7 +229,7 @@ confusionMatrix(predictions_strict, test_data_factor$label, positive = "spam")
 
 ### 7. Conclusion
 
-In this assignment, we leveraged Claude LLM to help build out a classification model to identify spam emails. We used native Bayes to train the model on 1200 emails and tested on 300. Our initial model resulted in far too many false positives (e.g., where a ham is incorrectly labelled spam), this would be harmful in the case of a spam filter if the reader then ignores important emails. To rectify this, we retooled the model to use a stricter confidence level to filter out less spam, therefore allowing for more ham emails to be correctly labelled.
+In this assignment, we leveraged Claude LLM to help build out a classification model to identify spam emails. We used Naive Bayes to train the model on 1200 emails and tested on 300. Our initial model resulted in far too many false positives (e.g., where a ham is incorrectly labelled spam), this would be harmful in the case of a spam filter if the reader then ignores important emails. To rectify this, we retooled the model to use a stricter confidence level to filter out less spam, therefore allowing for more ham emails to be correctly labelled.
 
 ### 0. References
 
